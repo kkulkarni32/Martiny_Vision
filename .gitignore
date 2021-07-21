@@ -1,0 +1,15 @@
+# Ignoring pretrained shadow detection model
+BDRAR/ckpt/*
+BDRAR/dss_crf/*
+BDRAR/resnext/resnext_101_32x4d.pth
+
+# Ignoreing Yolo folders and files
+yolo/*
+
+# Ignoring unncessary folders and files
+images/*
+Test/*
+Test.py
+.Git_Token.txt
+# Ignoring AWS related files as it contains certificates
+AWS/*
