@@ -28,8 +28,11 @@ WINDOW_NAME = 'TrtYOLODemo'
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('People_Count')
 objects = [0,1,15,16,25] #person,bike,cat,dog,umbrella
-store_data = False
+store_data = True
+store_aws = True
 
+# Args to pass
+# store_data, apply pink mask, images, freq_images, videos, freq_videos, aws related stuff like cred, tables etc
 def parse_args():
     """Parse input arguments."""
     desc = ('Capture and display live camera video, while doing '
@@ -71,7 +74,7 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
     vid_stop = True
     store_img = 0
     vid_count = 0
-    vid_time = [10,10,10,15,15,15,15,20,20,20,30]
+    vid_time = [10,10,10,15,15,15,15,20,20,20,30] #Variable for video time interval, which are chosen at random
     frames = 0
     vid_flag = False
     while True:
@@ -98,18 +101,14 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
         img = vis.draw_bboxes(img, boxes, confs, clss)
         img = show_fps(img, fps)
 
-        #people = np.count_nonzero(clss == 0)
-
         clss_list = clss.tolist()
         boxes_list = boxes.tolist()
 
-        if (shadow_flag or (timer_1-start)%900==0):
+        if (int(timer_1-start)%900==0): # Making sure that shadow image is loaded every 15 mintues. 
             print("Loading shadow data")
             shadow = cv2.imread("./Shadow_Map/Shadow.jpg")
             shadow = cv2.resize(shadow, (640,480))
-            # print(shadow.shape)
-            # print(img.shape)
-            # break
+            
 
             # This is to apply white mask for all the gray pixel points which are caused due to python3 conversion 
             shadow[shadow>10]=255
@@ -118,15 +117,15 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
             shadow[(shadow==[255,255,255]).all(axis=2)] = [193,182,255]
 
             
-            shadow_flag =False
+            # shadow_flag =False
             cv2.imwrite("./Shadow_Images/Shadow.jpg", img_cp)
 
         #Blending both the images
         img = cv2.addWeighted(img, 0.7,shadow, 0.4, 0)
         
-        
+    
 
-            
+
 
         for index, value in enumerate(clss_list):
             if value ==0:
@@ -142,6 +141,11 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
                 if shade:
                     shadow_count+=1
 
+                confs_ped = confs[index]
+                box_ped = boxes[index]
+                stack = np.hstack((box_ped,confs_ped))
+                # print(stack)
+
             elif value==1:
                 bike_count+=1
 
@@ -151,47 +155,54 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
             elif value==45:
                 umbrella_count+=1
 
-        print("Number of people", people_count)
-        print("Number in shadow", shadow_count)
+        # print("Number of people", people_count)
+        # print("Number in shadow", shadow_count)
         img = cv2.putText(img, "No. of people: {0}".format(people_count), (550,20), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0,0,0), 1, cv2.LINE_AA)
         img = cv2.putText(img, "People in shade: {0}".format(shadow_count), (550,35), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0,0,0), 1, cv2.LINE_AA)
         cv2.imshow(WINDOW_NAME, img)
 
-        if people_count >0 and frames %3==0:
-            # print("Storing image")
-            cv2.imwrite("Test/Images/Image_" + str (store_img) + ".jpg", img)
+        
+        if people_count >0 and frames %10==0:
+            # This checks if there is pedestrian every 10 seconds, and stores if there is.
+            timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
+            cv2.imwrite("Test/Images/Image_" + str(timestamp) + ".jpg", img_cp) # use img for images with bounding boxes, img_cp without bounding boxes
+            np.save("Test/Images/Shadow_" + str(timestamp) + ".npy", shadow)
+            np.save("Test/Images/bbox_" + str(timestamp) + ".npy", stack)
+            
             store_img+=1
 
-            if(store_img%20==0):
-                # print("image command ###################################")
+
+
+            if(store_data and store_img%20==0):
+                # This copies data from folder to aws and then delete them from local system
                 os.system("aws s3 cp ./Test/Images/ s3://martinyvision/ --recursive")
                 os.system("rm ./Test/Images/*")
 
         
-            if vid_stop and frames%20==0:
+            
+            if store_data and vid_stop and frames%20==0:
                 print("Storing videos")
                 vid_flag = True
                 vid_stop = False
                 vid_start = time.time()
                 choice = np.random.choice(vid_time)
-                vid = cv2.VideoWriter("Test/Videos/Video_" + str(vid_count) + ".mp4", 
+                vid = cv2.VideoWriter("Test/Videos/Video_" + str(datetime.datetime.now().replace(microsecond=0).isoformat()) + ".mp4", 
                             cv2.VideoWriter_fourcc(*'MP4V'),
                             12, (img.shape[1], img.shape[0]))
 
         if vid_flag:
-            # print("writing frame ########################")
+            
+            # This logic starts to store video, untill the length of the video equals to one of the random choices
             vid.write(img)
             vid_end = time.time()
-            # print("time difference $$$$$$$$$$$$$$", vid_end-vid_start)
-            # print("random choice $$$$$$$$$$$$", choice)
-            if int(vid_end-vid_start+1)%choice==0:
-                # print("releaseing video ###############################################")
+
+            if int(vid_end-vid_start+1)%choice==0: #not sure why I added +1?
                 vid_count+=1
                 vid.release()
                 vid_stop = True
                 vid_flag = False
 
-                if(vid_count%2==0):
+                if(store_data and vid_count%2==0):
                     # print("video command ###################################")
                     os.system("aws s3 cp ./Test/Videos/ s3://martinyvision/ --recursive")
                     os.system("rm ./Test/Videos/*")
@@ -205,7 +216,7 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
         tic = toc
         key = cv2.waitKey(1)
 
-        if store_data:
+        if store_aws and people_count>0:
             try:
                 table.put_item(   
                 Item={
@@ -251,11 +262,6 @@ def main():
 
     try:
         cam = Camera(args)
-
-        # vid = cv2.VideoWriter('./Test/output.mp4', 
-        #                     cv2.VideoWriter_fourcc(*'MP4V'),
-        #                     15, (cam.img_width, cam.img_height))
-        # print("width and height",(cam.img_width, cam.img_height))
         
         if not cam.isOpened():
             raise SystemExit('ERROR: failed to open camera!')
@@ -263,7 +269,6 @@ def main():
         cls_dict = get_cls_dict(args.category_num)
         vis = BBoxVisualization(cls_dict)
         h, w = get_input_shape(args.model)
-        # print("/nw and h",(w,h))
         trt_yolo = TrtYOLO(args.model, (h, w), args.category_num, args.letter_box)
 
         open_window(
