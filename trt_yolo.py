@@ -119,10 +119,11 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
             
             # shadow_flag =False
             cv2.imwrite("./Shadow_Images/Shadow.jpg", img_cp)
+            time.sleep(1) # Making sure to not load shadow map again within a second
 
         #Blending both the images
         img = cv2.addWeighted(img, 0.7,shadow, 0.4, 0)
-        time.sleep(1) # Making sure to not load shadow map again within a second
+        
         
     
 

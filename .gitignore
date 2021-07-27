@@ -11,5 +11,6 @@ images/*
 Test/*
 Test.py
 .Git_Token.txt
+.aws_access.csv
 # Ignoring AWS related files as it contains certificates
 AWS/*
