@@ -122,6 +122,7 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
 
         #Blending both the images
         img = cv2.addWeighted(img, 0.7,shadow, 0.4, 0)
+        time.sleep(1) # Making sure to not load shadow map again within a second
         
     
 
@@ -161,34 +162,62 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
         img = cv2.putText(img, "People in shade: {0}".format(shadow_count), (550,35), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0,0,0), 1, cv2.LINE_AA)
         cv2.imshow(WINDOW_NAME, img)
 
-        
-        if people_count >0 and frames %10==0:
-            # This checks if there is pedestrian every 10 seconds, and stores if there is.
+        if store_aws and people_count>0:
             timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
-            cv2.imwrite("Test/Images/Image_" + str(timestamp) + ".jpg", img_cp) # use img for images with bounding boxes, img_cp without bounding boxes
-            np.save("Test/Images/Shadow_" + str(timestamp) + ".npy", shadow)
-            np.save("Test/Images/bbox_" + str(timestamp) + ".npy", stack)
+            try:
+                table.put_item(   
+                Item={
+                'Time': timestamp,
+                'No of people': people_count,
+                'No of people in shade': shadow_count,
+                'Bikes' : bike_count,
+                'Umbrellas' : umbrella_count,
+                'No of pets' : pet_count
+
+                        }
+                )
+
+            except:
+                print("unable to insert data in AWS table")
+
+            if frames %30==0:
+            # This checks if there is pedestrian every 10 seconds, and stores if there is.
+                # timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
+                cv2.imwrite("Test/Images/Image_" + str(timestamp) + ".jpg", img_cp) # use img for images with bounding boxes, img_cp without bounding boxes
+                np.save("Test/Images/Shadow_" + str(timestamp) + ".npy", shadow)
+                np.save("Test/Images/bbox_" + str(timestamp) + ".npy", stack)
+                
+                store_img+=1
+
+
+
+                if(store_data and store_img%10==0):
+                    # This copies data from folder to aws and then delete them from local system
+                    print("sending data to AWS")
+                    os.system("aws s3 cp ./Test/Images/ s3://martinyvision/ --recursive")
+                    os.system("rm ./Test/Images/*")
+
             
-            store_img+=1
+                
+                if store_data and vid_stop and frames%60==0:
+                    print("Storing videos")
+                    vid_flag = True
+                    vid_stop = False
+                    vid_start = time.time()
+                    choice = np.random.choice(vid_time)
+                    vid = cv2.VideoWriter("Test/Videos/Video_" + str(datetime.datetime.now().replace(microsecond=0).isoformat()) + ".mp4", 
+                                cv2.VideoWriter_fourcc(*'MP4V'),
+                                12, (img.shape[1], img.shape[0]))
 
+            timer_2=time.time()
 
+            # This will make sure the next frame is after 1 second, hence calculating and storing data every second
+            if(timer_2-timer_1<1):
+                time.sleep(1-(timer_2-timer_1))
 
-            if(store_data and store_img%20==0):
-                # This copies data from folder to aws and then delete them from local system
-                os.system("aws s3 cp ./Test/Images/ s3://martinyvision/ --recursive")
-                os.system("rm ./Test/Images/*")
 
         
-            
-            if store_data and vid_stop and frames%20==0:
-                print("Storing videos")
-                vid_flag = True
-                vid_stop = False
-                vid_start = time.time()
-                choice = np.random.choice(vid_time)
-                vid = cv2.VideoWriter("Test/Videos/Video_" + str(datetime.datetime.now().replace(microsecond=0).isoformat()) + ".mp4", 
-                            cv2.VideoWriter_fourcc(*'MP4V'),
-                            12, (img.shape[1], img.shape[0]))
+        
 
         if vid_flag:
             
@@ -202,7 +231,7 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
                 vid_stop = True
                 vid_flag = False
 
-                if(store_data and vid_count%2==0):
+                if(store_data and vid_count%10==0):
                     # print("video command ###################################")
                     os.system("aws s3 cp ./Test/Videos/ s3://martinyvision/ --recursive")
                     os.system("rm ./Test/Videos/*")
@@ -216,28 +245,7 @@ def loop_and_detect(cam, trt_yolo, conf_th, vis):
         tic = toc
         key = cv2.waitKey(1)
 
-        if store_aws and people_count>0:
-            try:
-                table.put_item(   
-                Item={
-                'Time': datetime.datetime.now().replace(microsecond=0).isoformat(),
-                'No of people': people_count,
-                'No of people in shade': shadow_count,
-                'Bikes' : bike_count,
-                'Umbrellas' : umbrella_count,
-                'No of pets' : pet_count
-
-                        }
-                )
-            except:
-                print("unable to insert data in AWS table")
-
-            timer_2=time.time()
-
-            # This will make sure the next frame is after 1 second, hence calculating and storing data every second
-            if(timer_2-timer_1<1):
-                time.sleep(1-(timer_2-timer_1))
-
+        
         
 
 
